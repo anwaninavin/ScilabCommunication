@@ -7,26 +7,35 @@
 
 //***************
 ////Few comments:
-//1. The function accepts minimum 2 input argument and maximum 3.
+//1. The function accepts minimum 2 input argument and maximum 4.
 
-//2. The option for providing word length K as 4th input argument as in MATLAB has been skipped, as it is not as useful. It has been replaced by a functionality to dynamically decide the word length in the program itself based on the input data.
+//2. The option for providing word length K as an optional input argument as in MATLAB has been added.
 
 //3. Functionality to select row-wise or column-wise or overall bit error has been added as in MATLAB.
+
+//4. Also the argument #3 and #4 can be swapped without any trouble
 
 function [number, ratio, varargout] = biterr(X, Y, varargin)
 //  X, Y : Matrices of Boolean, integer or float/real datatype, such that at least one of the dimension of the two is identical and when the datatype is real then all the elemnts be integer valued.
 
 //All the elements of inputs X and Y should fit in 32 bit unsigned integer representation
 
-//Input argument #3: CFLAG => {'row-wise', column-wise', 'overall'}: -specifying how to report the results. In case it is not specified.
+//Optional input arguments: 
 
-// Specification of word length K has been skiiped and instead determination of optimal word length K for the given input data has been implemented.
+////CFLAG => {'row-wise', column-wise', 'overall'}: -specifying how to report the results.
 
-//  number : Total number of bits which are in error
+//// Specification of word length K has also been added.
 
-//  ratio : Ratio of the nummber of bits in error to the total number of element in the larger of the matrices X and Y.
+//Output arguments:
+////  number : Total number of bits which are in error
 
-//  varargout = individual: nummber of error in individual elements
+////  ratio : Ratio of the nummber of bits in error to the total number of element in the larger of the matrices X and Y.
+
+////  varargout = individual: nummber of error in individual elements
+
+
+    maxRHS = 4      //the maximum number of input arguments
+    minRHS = 2      //the minimum number of input arguments
 
 //Initialization of outputs; useful only when an error is to be reported
     number = []
@@ -34,9 +43,10 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
     individual = []
     varargout = list(individual)
     
-    maxRHS = 3      //the maximum number of input arguments
-    minRHS = 2      //the minimum number of input arguments
-    
+//Initially assume scope of comparison and K have not been defined
+    scopeDefined = 0        
+    KDefined = 0
+
 //Verifying correct number of input and output arguments
     [lhs, rhs] = argn(0)
     if rhs < minRHS then
@@ -47,13 +57,40 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         return
     end
 
-//Verify correct format of input argument #3
+//Verify correct format of input argument #3 and #4
     if (rhs > 2) then      //if the varargin is not empty
-        if ((varargin(1) ~= 'row-wise') & (varargin(1) ~= 'column-wise') & (varargin(1) ~= 'overall')) then
-            disp("Error: Expect one of: row-wise, column-wise or overall at input argument #3.")
-            return
+        if ((varargin(1) == 'row-wise') | (varargin(1) == 'column-wise') | (varargin(1) == 'overall')) then
+            reportScope = varargin(1)
+            scopeDefined = 1
+            if rhs==4 then      //if there are 4 input arguments
+                K = varargin(2)         //if varargin(1) is one of row-wise/column-wise/overall then varargin(2) should be word length K
+                if ((K ~= floor(K)) | (K > 32)) then        //if given word length is not an integer or it is grater than 32 then report error
+                    disp("Error: Improper input at argument #4")
+                    return
+                else
+                    KDefined = 1
+                end
+            end
+        else
+            K = varargin(1)         //if varargin(1) is NONE of row-wise/column-wise/overall then varargin(2) should be word length K
+            if ((K ~= floor(K)) | (K > 32)) then        //if given word length is not an integer or it is grater than 32 then report error
+                disp("Error: Improper input at argument #3")
+                return
+            else
+                KDefined = 1
+            end
+            if rhs==4 then      //if there are 4 input arguments and 3rd is K then 4th is reportScope
+                if ((varargin(2) == 'row-wise') | (varargin(2) == 'column-wise') | (varargin(2) == 'overall')) then
+                    reportScope = varargin(2)
+                    scopeDefined = 1
+                else
+                    disp("Error: Improper input at argument #4.")
+                    return
+                end
+            end
         end
     end
+    
 
 //Verification of whether the input matrices have correct datatype
     typeX = type(X)
@@ -101,10 +138,25 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         maxX = max(X)
         maxY = max(Y)
         maximum = max(maxX,maxY)        //Determination of maximum of all elements
-
-        K = floor(log2(double(maximum))) + 1    //The minimum number of bits required to represent the largest element in unsigned int format upto 32 bits.
+        wordLen = floor(log2(double(maximum))) + 1    //The minimum number of bits required to represent the largest element in unsigned int format upto 32 bits.
+        
+        if KDefined then
+            if K < wordLen      //report error if provided K is less than min. number of bits required to represent maximum
+                disp('Error: The given input matrices in arguments #1 and #2 have elements too large to fit into given word length')
+                return
+            end
+        else
+            K=wordLen
+        end
     else        //if input is boolean
-        K=1     //but this will not be used
+        if KDefined then
+            if K ~= 1      //report error if provided K is greater than 1 if input is boolean
+                disp('Error: For Boolean input word length must be 1')
+                return
+            end
+        else
+            K=1
+        end
     end
     
 //Process based on the relative size of matrices
@@ -115,10 +167,8 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         Xhat = X
         Yhat = Y
         //Determining the scope of comparison
-        if rhs == 2 then            //if the varargin is empty then default reportScope
+        if ~(scopeDefined) then            //if the varargin is empty then default reportScope
             reportScope = 'overall'         //by default report overall comparison for identical sized Matrices
-        else
-            reportScope = varargin(1)         //Else keep the report scope as given whether it be row-wise, column-wise or overall
         end
 
     elseif ((rX ~= rY) & (cX == cY)) then       //if the number of rows is different but number of columns is same
@@ -134,13 +184,11 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         end
 
 //Determining the scope of comparison
-        if rhs == 2 then            //if the varargin is empty then default reportScope
+        if ~(scopeDefined) then            //if the varargin is empty then default reportScope
             reportScope = 'row-wise'         //by default report row-wise comparison for such input            
-        elseif varargin == 'column-wise' then
+        elseif reportScope == 'column-wise' then
             disp("Error: A column-wise comparison is not possible when sizes of two inputs are not same and one of the inputs is a row vector")
             return
-        else
-            reportScope = varargin(1)         //Else keep the report scope as given whether it be row-wise or overall
         end
         
     elseif ((cX ~= cY) & (rX == rY)) then       //if the number of columns is different but number of rows is same
@@ -156,15 +204,13 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         end
 
 //Determining the scope of comparison
-        if rhs == 2 then            //if the varargin is empty then default reportScope
+        if ~(scopeDefined) then            //if the varargin is empty then default reportScope
             reportScope = 'column-wise'         //by default report column-wise comparison for such input            
-        elseif varargin == 'row-wise' then
+        elseif reportScope == 'row-wise' then
             disp("Error: A row-wise comparison is not possible when sizes of two inputs are not same and one of the inputs is a row vector")
             return
-        else
-            reportScope = varargin(1)         //Else keep the report scope as given whether it be column-wise or overall
         end
-        
+
     else        //if none of the dimensions of X and Y is same then report an error
         disp("Error: None of the dimensions of two input matrices is matching")
         return
@@ -202,7 +248,8 @@ function [number, ratio, varargout] = biterr(X, Y, varargin)
         number = sum(individual,1)        //the total number of bit errors
         numElements = rDiff
     end
-    ratio = double(number)/double(numElements)      //the ratio of number of bit errors to the number of elements
+    numBits = numElements*K
+    ratio = double(number)/double(numBits)      //the ratio of number of bit errors to the number of bits
 endfunction
 
 ////        Test cases
@@ -215,15 +262,10 @@ endfunction
 //  [number, rate] = biterr(X,Y)
 //  
 ////2.
-//  X = d
-//  Y = d
 //  Y(2) = 1
 //  [number, rate] = biterr(X,Y)
 //  
 ////3.
-//  X = d
-//  Y = d
-//  Y(2) = 1
 //  [number, rate, indiv] = biterr(X,Y)
 
 ////4.: It by default gives column-wise comparison
@@ -233,9 +275,6 @@ endfunction
 //  [errNum, rate, indiv] = biterr(X,Y)
 
 ////5.: Asking for overall comparison
-//  X = repmat(d,1,3)
-//  Y = d
-//  Y(2) = 1
 //  [errNum, rate, indiv] = biterr(X,Y,'overall')
 
 ////6.:It by default gives row-wise comparison
@@ -256,10 +295,18 @@ endfunction
 //  Y(2,2) = 1
 //  [errNum, rate, indiv] = biterr(X,Y,'row-wise')
 
-//***************
-////Few comments:
-//1. The function accepts minimum 2 input argument and maximum 3.
+////9.:Specifyig the word length K
+//  X = repmat(d',3,1)
+//  Y = X
+//  Y(2,2) = 1
+//  [errNum, rate, indiv] = biterr(X,Y,5)
 
-//2. The option for providing word length K as 4th input argument as in MATLAB has been skipped, as it is not as useful. It has been replaced by a functionality to dynamically decide the word length in the program itself based on the input data.
+////10.:Specifyig all 4 input arguments
+//  X = repmat(d',3,1)
+//  Y = X
+//  Y(2,2) = 1
+//  [errNum, rate, indiv] = biterr(X,Y,5,'row-wise')
 
-//3. Functionality to select row-wise or column-wise or overall bit error has been added as in MATLAB.
+////11.
+//  [errNum, rate, indiv] = biterr(X,Y,'row-wise',5)
+
